@@ -218,11 +218,15 @@ class ArgoverseInMem(InMemoryDataset):
         return offset_fut.reshape(-1).astype(np.float32)
 
 
-# dataset loader which loads data into memory
+# dataset loader which loads data from disk on demand (memory-efficient)
 class ArgoverseInDisk(Dataset):
     def __init__(self, root, transform=None, pre_transform=None):
         super(ArgoverseInDisk, self).__init__(root, transform, pre_transform)
-        self.data, self.slices = torch.load(self.processed_paths[0])
+        # Scan for per-sample files after processing is done
+        self._data_files = sorted([
+            f for f in os.listdir(self.processed_dir)
+            if f.startswith('data_') and f.endswith('.pt')
+        ])
         gc.collect()
 
     @property
@@ -231,24 +235,27 @@ class ArgoverseInDisk(Dataset):
 
     @property
     def processed_file_names(self):
-        return [file for file in os.listdir(self.processed_dir) if "data" in file and file.endswith(".pt")]
+        # Use a sentinel file so PyG knows whether to call process()
+        return ['processed_disk.done']
 
     def download(self):
         pass
 
     def len(self):
-        return len(self.processed_file_names)
+        return len(self._data_files)
+
+    def shuffle(self, return_perm=False):
+        # Shuffling is handled by DataLoader(shuffle=True); return self as no-op
+        return self
 
     def process(self):
-        """ transform the raw data and store in GraphData """
-        # loading the raw data
+        """ transform the raw data and store each sample as an individual .pt file """
         traj_lens = []
         valid_lens = []
         candidate_lens = []
         for raw_path in tqdm(self.raw_paths, desc="Loading Raw Data..."):
             raw_data = pd.read_pickle(raw_path)
 
-            # statistics
             traj_num = raw_data['feats'].values[0].shape[0]
             traj_lens.append(traj_num)
 
@@ -262,13 +269,11 @@ class ArgoverseInDisk(Dataset):
         print("\n[Argoverse]: The maximum of valid length is {}.".format(num_valid_len_max))
         print("[Argoverse]: The maximum of no. of candidates is {}.".format(num_candidate_max))
 
-        # pad vectors to the largest polyline id and extend cluster, save the Data to disk
         for ind, raw_path in enumerate(tqdm(self.raw_paths, desc="Transforming the data to GraphData...")):
             file_name = osp.split(raw_path)[1]
             file_id = re.findall(r"\d+", file_name)[0]
 
             raw_data = pd.read_pickle(raw_path)
-            # input data
             x, cluster, edge_index, identifier = self._get_x(raw_data)
             y = self._get_y(raw_data)
             graph_input = GraphData(
@@ -276,11 +281,11 @@ class ArgoverseInDisk(Dataset):
                 y=torch.from_numpy(y).float(),
                 cluster=torch.from_numpy(cluster).short(),
                 edge_index=torch.from_numpy(edge_index).long(),
-                identifier=torch.from_numpy(identifier).float(),    # the identify embedding of global graph completion
+                identifier=torch.from_numpy(identifier).float(),
 
-                traj_len=torch.tensor([traj_lens[ind]]).int(),            # number of traj polyline
-                valid_len=torch.tensor([valid_lens[ind]]).int(),          # number of valid polyline
-                time_step_len=torch.tensor([num_valid_len_max]).int(),    # the maximum of no. of polyline
+                traj_len=torch.tensor([traj_lens[ind]]).int(),
+                valid_len=torch.tensor([valid_lens[ind]]).int(),
+                time_step_len=torch.tensor([num_valid_len_max]).int(),
 
                 candidate_len_max=torch.tensor([num_candidate_max]).int(),
                 candidate_mask=[],
@@ -294,11 +299,14 @@ class ArgoverseInDisk(Dataset):
                 seq_id=torch.tensor([int(raw_data['seq_id'])]).int()
             )
 
-            # save the data into a single file
             torch.save(graph_input, osp.join(self.processed_dir, 'data_{}.pt'.format(file_id)))
 
+        # Write sentinel file to indicate processing is complete
+        with open(osp.join(self.processed_dir, 'processed_disk.done'), 'w') as f:
+            f.write('done')
+
     def get(self, idx: int):
-        data = torch.load(osp.join(self.processed_dir, self.processed_file_names[idx]))
+        data = torch.load(osp.join(self.processed_dir, self._data_files[idx]))
 
         feature_len = data.x.shape[1]
         index_to_pad = data.time_step_len[0].item()
@@ -307,14 +315,15 @@ class ArgoverseInDisk(Dataset):
         # pad feature with zero nodes
         data.x = torch.cat([data.x, torch.zeros((index_to_pad - valid_len, feature_len), dtype=data.x.dtype)])
         data.cluster = torch.cat([data.cluster, torch.arange(valid_len, index_to_pad)]).long()
-        data.identifier = torch.cat([data.identifier, torch.zeros((index_to_pad - valid_len, 2), dtype=data.x.dtype)])
+        data.identifier = torch.cat([data.identifier, torch.zeros((index_to_pad - valid_len, 2), dtype=data.identifier.dtype)])
 
         # pad candidate and candidate_gt
         num_cand_max = data.candidate_len_max[0].item()
         data.candidate_mask = torch.cat([torch.ones((len(data.candidate), 1)),
                                          torch.zeros((num_cand_max - len(data.candidate), 1))])
         data.candidate = torch.cat([data.candidate, torch.zeros((num_cand_max - len(data.candidate), 2))])
-        data.candidate_gt = torch.cat([data.candidate_gt, torch.zeros((num_cand_max - len(data.candidate_gt), 1))])
+        data.candidate_gt = torch.cat([data.candidate_gt,
+                                       torch.zeros((num_cand_max - len(data.candidate_gt), 1), dtype=data.candidate_gt.dtype)])
 
         return data
 
@@ -366,7 +375,7 @@ class ArgoverseInDisk(Dataset):
             [indices] = np.where(cluster == cluster_idc)
             identifier = np.vstack([identifier, np.min(feats[indices, :2], axis=0)])
             if len(indices) <= 1:
-                continue                # skip if only 1 node
+                continue
             if cluster_idc < traj_cnt:
                 edge_index = np.hstack([edge_index, get_fc_edge_index(indices)])
             else:
