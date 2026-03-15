@@ -98,11 +98,11 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--aux_loss", action="store_true", default=True,
                         help="Training with the auxiliary recovery loss")
 
-    parser.add_argument("-b", "--batch_size", type=int, default=32,
+    parser.add_argument("-b", "--batch_size", type=int, default=256,
                         help="number of batch_size")
     parser.add_argument("-e", "--n_epoch", type=int, default=50,
                         help="number of epochs")
-    parser.add_argument("-w", "--num_workers", type=int, default=4,
+    parser.add_argument("-w", "--num_workers", type=int, default=16,
                         help="dataloader worker size")
 
     parser.add_argument("-c", "--with_cuda", action="store_true", default=True,

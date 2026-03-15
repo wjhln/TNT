@@ -6,7 +6,7 @@ import json
 import argparse
 
 # from core.dataloader.argoverse_loader import Argoverse, GraphData, ArgoverseInMem
-from core.dataloader.argoverse_loader_v2 import ArgoverseInMem as ArgoverseInMemv2, GraphData
+from core.dataloader.argoverse_loader_v2 import ArgoverseInDisk, GraphData
 from core.trainer.tnt_trainer import TNTTrainer
 
 sys.path.append("core/dataloader")
@@ -18,8 +18,8 @@ def train(gpu, args):
     :param args:
     :return:
     """
-    train_set = ArgoverseInMemv2(pjoin(args.data_root, "train_intermediate")).shuffle()
-    eval_set = ArgoverseInMemv2(pjoin(args.data_root, "val_intermediate"))
+    train_set = ArgoverseInDisk(pjoin(args.data_root, "train_intermediate"))
+    eval_set = ArgoverseInDisk(pjoin(args.data_root, "val_intermediate"))
 
     # init output dir
     time_stamp = datetime.now().strftime("%m-%d-%H-%M")
@@ -82,7 +82,7 @@ def train(gpu, args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-d", "--data_root", required=False, type=str, default="dataset/interm_tnt_n_s_0804_small",
+    parser.add_argument("-d", "--data_root", required=False, type=str, default="/root/autodl-tmp/dataset/interm_data",
                         help="root dir for datasets")
     parser.add_argument("-o", "--output_dir", required=False, type=str, default="run/tnt/",
                         help="ex)dir to save checkpoint and model")
@@ -92,14 +92,14 @@ if __name__ == "__main__":
     parser.add_argument("-a", "--aux_loss", action="store_true", default=True,
                         help="Training with the auxiliary recovery loss")
 
-    parser.add_argument("-b", "--batch_size", type=int, default=2,
+    parser.add_argument("-b", "--batch_size", type=int, default=128,
                         help="number of batch_size")
     parser.add_argument("-e", "--n_epoch", type=int, default=50,
                         help="number of epochs")
     parser.add_argument("-w", "--num_workers", type=int, default=16,
                         help="dataloader worker size")
 
-    parser.add_argument("-c", "--with_cuda", action="store_true", default=False,
+    parser.add_argument("-c", "--with_cuda", action="store_true", default=True,
                         help="training with CUDA: true, or false")
     parser.add_argument("-m", "--multi_gpu", action="store_true", default=False,
                         help="training with distributed data parallel: true, or false")
@@ -113,9 +113,9 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate of adam")
     parser.add_argument("-we", "--warmup_epoch", type=int, default=30,
                         help="the number of warmup epoch with initial learning rate, after the learning rate decays")
-    parser.add_argument("-luf", "--lr_update_freq", type=int, default=5,
+    parser.add_argument("-luf", "--lr_update_freq", type=int, default=10,
                         help="learning rate decay frequency for lr scheduler")
-    parser.add_argument("-ldr", "--lr_decay_rate", type=float, default=0.9, help="lr scheduler decay rate")
+    parser.add_argument("-ldr", "--lr_decay_rate", type=float, default=0.1, help="lr scheduler decay rate")
     parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")

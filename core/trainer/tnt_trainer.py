@@ -1,4 +1,5 @@
 import os
+import pickle
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
@@ -11,8 +12,11 @@ from torch_geometric.nn import DataParallel
 from argoverse.evaluation.eval_forecasting import get_displacement_errors_and_miss_rate
 from argoverse.evaluation.competition_util import generate_forecasting_h5
 
-from apex import amp
-from apex.parallel import DistributedDataParallel
+try:
+    from apex import amp
+    from apex.parallel import DistributedDataParallel
+except:
+    pass
 
 from core.trainer.trainer import Trainer
 from core.model.TNT import TNT
@@ -308,11 +312,16 @@ class TNTTrainer(Trainer):
                 plt.pause(3)
                 ax.clear()
 
-        # todo: save the output in argoverse format
+        # save the output in argoverse competition h5 format and as pkl for evaluation
         if save_pred:
-            for key in forecasted_trajectories.keys():
-                forecasted_trajectories[key] = np.asarray(forecasted_trajectories[key])
-            generate_forecasting_h5(forecasted_trajectories, self.save_folder)
+            pred_for_h5 = {key: np.asarray(val) for key, val in forecasted_trajectories.items()}
+            generate_forecasting_h5(pred_for_h5, self.save_folder)
+
+            with open(os.path.join(self.save_folder, "forecasted_trajectories.pkl"), "wb") as f:
+                pickle.dump(forecasted_trajectories, f)
+            with open(os.path.join(self.save_folder, "gt_trajectories.pkl"), "wb") as f:
+                pickle.dump(gt_trajectories, f)
+            print("[TNTTrainer]: Saved forecasted_trajectories.pkl and gt_trajectories.pkl to {}.".format(self.save_folder))
 
     # function to convert the coordinates of trajectories from relative to world
     def convert_coord(self, traj, orig, rot):

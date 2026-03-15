@@ -10,7 +10,7 @@ from torch_geometric.data import DataLoader
 
 from core.dataloader.dataset import GraphDataset
 # from core.dataloader.argoverse_loader import Argoverse, GraphData, ArgoverseInMem
-from core.dataloader.argoverse_loader_v2 import GraphData, ArgoverseInMem
+from core.dataloader.argoverse_loader_v2 import GraphData, ArgoverseInDisk
 from core.trainer.tnt_trainer import TNTTrainer
 
 sys.path.append("core/dataloader")
@@ -32,7 +32,7 @@ def test(args):
 
     # data loading
     try:
-        test_set = ArgoverseInMem(pjoin(args.data_root, "{}_intermediate".format(args.split)))
+        test_set = ArgoverseInDisk(pjoin(args.data_root, "{}_intermediate".format(args.split)))
     except:
         raise Exception("Failed to load the data, please check the dataset!")
 
@@ -58,9 +58,9 @@ def test(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-r", "--data_root", type=str, default="dataset/interm_data_2022",
+    parser.add_argument("-r", "--data_root", type=str, default="/root/autodl-tmp/dataset/interm_data",
                         help="root dir for datasets")
-    parser.add_argument("-s", "--split", type=str, default="test")
+    parser.add_argument("-s", "--split", type=str, default="val")
 
     parser.add_argument("-b", "--batch_size", type=int, default=128,
                         help="number of batch_size")
